@@ -1,0 +1,81 @@
+# hive-hw3
+//fields length, etc
+SELECT max(length(bid_id)) bid_id, max(length(tstamp)) tstamp, max(length(log)) log, max(length(ipinyou_id)) ipinyou_id, max(length(useragent)) useragent, max(length(ip)) ip, max(region) region, max(city) city, max(ad_exchange) ad_exchange, max(length(domain)) domain, max(length(url)) url, max(length(anonymous_url_id)) anonymous_url_id, max(length(ad_slot_id)) ad_slot_id, max(ad_slot_width) ad_slot_width, max(ad_slot_height) ad_slot_height, max(length(ad_slot_visibility)) ad_slot_visibility, max(length(ad_slot_format)) ad_slot_format, max(ad_slot_price) ad_slot_price, max(length(creative_id)) creative_id, max(bidding_price) bidding_price, max(paying_price) paying_price, max(length(key_page_url)) key_page_url, max(advertiser_id) advertiser_id, max(length(user_tags)) user_tags from hw.impressions orc;
+
+USE hw;
+DROP TABLE hw.impressions;
+DROP TABLE hw.impressions_orc;
+
+
+
+CREATE EXTERNAL TABLE hw.ext_impressions (bid_id VARCHAR(32), tstamp BIGINT, log CHAR(1), ipinyou_id VARCHAR(25), useragent VARCHAR(1500), ip VARCHAR(20), region SMALLINT, city SMALLINT, ad_exchange TINYINT, domain VARCHAR(32), url VARCHAR(32), anonymous_url_ID VARCHAR(5), ad_slot_id VARCHAR(32), ad_slot_width SMALLINT, ad_slot_height SMALLINT, ad_slot_visibility VARCHAR(10), ad_slot_format VARCHAR(2), ad_slot_price SMALLINT, creative_id VARCHAR(5), bidding_price SMALLINT, paying_price SMALLINT, key_page_url VARCHAR(4), advertiser_id SMALLINT, user_tags VARCHAR(500))
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\t'
+STORED AS TEXTFILE
+LOCATION '/training/hadoop/hw4/dataset';
+
+//LOAD DATA INPATH '/hw/hive3' INTO TABLE impressions;
+//SELECT COUNT(*) FROM hw.impressions;
+//SELECT * FROM hw.impressions LIMIT 5;
+--------------
+
+CREATE TABLE hw.impressions (city SMALLINT, useragent VARCHAR(1500), bidding_price SMALLINT)
+PARTITIONED BY (region SMALLINT)
+STORED AS ORCFILE;
+
+insert overwrite table hw.impressions partition (region)
+select 
+city, useragent, bidding_price, region
+from hw.ext_impressions
+WHERE bidding_price>250;
+
+
+
+//SELECT COUNT(*) FROM hw.impressions;
+//SELECT * FROM hw.impressions_orc LIMIT 5;
+
+
+//CREATE FUNCTION clp AS 'com.epam.hive.udtf.GenericUDTFClientParser' USING JAR 'hdfs:///hw/udtf/clparser.jar';
+
+add jar hdfs:///hw/udtf/clparser.jar;
+create temporary function clp as 'com.epam.hive.udtf.GenericUDTFClientParser';
+
+SELECT clp(useragent) FROM hw.impressions LIMIT 5;
+
+
+add jar hdfs:///hw/udtf/clparser.jar;
+create temporary function clcityparser as 'com.epam.hive.udtf.GenericUDTFCityClientParser';
+
+CREATE TEMPORARY TABLE hw.ua
+AS
+SELECT clcityparser(useragent, city) FROM hw.impressions;
+
+
+SELECT DISTINCT city, os, collect_list(cnt) FROM 
+(SELECT city, os, browser, COUNT(*) cnt FROM hw.ua GROUP BY city, os, browser ORDER BY city, cnt DESC) a
+GROUP BY city, os 
+LIMIT 10;
+
+#now we are ready to issue our query
+hive> SELECT city, browser
+FROM (
+    SELECT city, browser, rank(user) as rank
+    FROM hw.ua
+    WHERE city is NOT NULL AND browser IS NOT NULL
+    DISTRIBUTE BY city
+    SORT BY city, browser DESC
+) a
+WHERE rank &lt; 5
+ORDER BY user, rank;
+
+
+
+
+LEFT JOIN
+SELECT city, browser, COUNT(*) cnt FROM hw.ua GROUP BY city, browser ORDER BY cnt DESC LIMIT 5
+
+SELECT city, browser, COUNT(*) cnt FROM hw.ua GROUP BY city, browser ORDER BY cnt DESC
+
+(SELECT city, concat_ws(", ", collect_set(os)) cities FROM hw.ua
+GROUP BY city
+)
